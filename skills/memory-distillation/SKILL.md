@@ -192,7 +192,7 @@ EMBED_MODEL=${{embedding_model:-$EMBEDDING_MODEL}}
 curl -s "$EMBED_API" \
   -H "Authorization: Bearer $EMBED_KEY" \
   -H "Content-Type: application/json" \
-  -d "{\"model\": \"$EMBED_MODEL\", \"input\": \"{{content}}\"}" \
+  -d "{\"model\": \"$EMBED_MODEL\", \"input\": \"{{content}}\", \"dimensions\": 1536}" \
   | jq -r '.data[0].embedding'
 ```
 
