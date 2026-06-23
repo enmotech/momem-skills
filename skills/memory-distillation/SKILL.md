@@ -65,6 +65,24 @@ The following environment variables are used as defaults for Embedding API param
 | `EMBEDDING_KEY` | API key | `sk-xxx` |
 | `EMBEDDING_MODEL` | Model name | `text-embedding-3-small` |
 
+### Embedding Dimensions
+
+The pgvector column is `vector(1536)`. All embedding API calls in this skill
+hardcode `"dimensions": 1536` to match. When switching embedding models:
+
+- **OpenAI `text-embedding-3-small` / `text-embedding-3-large`**: support the
+  `dimensions` parameter — passing 1536 works (3-large natively outputs 3072
+  but truncates to 1536).
+- **OpenAI `text-embedding-ada-002`**: natively 1536 dimensions but does **not**
+  support the `dimensions` parameter — the API will reject the request. Remove
+  the `"dimensions": 1536` field from the curl payload if using this model.
+- **BigModel `embedding-3`**: native 2048 dimensions — the `dimensions: 1536`
+  parameter is **required**; without it the API returns 2048-dim vectors that
+  will fail pgvector insertion.
+- **Other models**: verify the model supports a 1536-dim output (or update the
+  pgvector column dimension and all `"dimensions":` values in this skill and
+  in `internal/embedding/embedding.go` `DefaultDimensions`).
+
 ## Workflow
 
 ### Execution Helper
@@ -98,6 +116,17 @@ run_write_sql() {
   tmp=$(mktemp)
   render_sql "$sql_file" "$@" > "$tmp"
   swissql exec --profile-id "$SWISSQL_PROFILE_ID" --allow-write --file "$tmp"
+  rm -f "$tmp"
+}
+
+# Same as run_write_sql but outputs JSON (for capturing RETURNING clause results)
+run_write_sql_json() {
+  local sql_file="$1"
+  shift
+  local tmp
+  tmp=$(mktemp)
+  render_sql "$sql_file" "$@" > "$tmp"
+  swissql -o json exec --profile-id "$SWISSQL_PROFILE_ID" --allow-write --file "$tmp"
   rm -f "$tmp"
 }
 ```
@@ -177,6 +206,11 @@ Output format:
 ]
 ```
 
+**Note on `content` field**: For `success_playbook`, `content` is a JSON object. Before
+passing it to `SQL_PARAM_content` in Step 4, serialize it to a string:
+`jq -c '.content | if type == "object" then tostring else . end'`. All other types
+use string content directly.
+
 ### Step 4: Store Memories (with Deduplication)
 
 For each memory in the distilled result:
@@ -209,7 +243,21 @@ run_sql "$SCRIPTS/check_similar_memory.sql" \
   SQL_PARAM_similarity_threshold="{{similarity_threshold}}"
 ```
 
-3. **Decision**: If similar memory found (similarity > threshold):
+The query returns the existing memory's `id` if a similar memory is found, or
+zero rows if none. To check programmatically, use `-o json` and test for a
+non-empty result:
+
+```bash
+EXISTING_ID=$(swissql -s "$SWISSQL_SERVER" -o json exec --profile-id "$SWISSQL_PROFILE_ID" \
+  --file "$tmp" | jq -r '.[0].id // empty')
+if [ -n "$EXISTING_ID" ]; then
+  # similar memory found → dedup path
+else
+  # no similar memory → store new path
+fi
+```
+
+3. **Decision**: If similar memory found (`EXISTING_ID` is non-empty):
    - Update existing memory's `occurrence_count`:
 
 ```bash
@@ -221,10 +269,11 @@ run_write_sql "$SCRIPTS/update_memory_occurrence.sql" \
    - Skip storing new memory
 
 4. **Decision**: If no similar memory found:
-   - Store new memory:
+   - Store new memory. Use `-o json` to capture the `RETURNING id` result
+     (needed for the supersede step below):
 
 ```bash
-run_write_sql "$SCRIPTS/store_memory.sql" \
+NEW_ID=$(run_write_sql_json "$SCRIPTS/store_memory.sql" \
   SQL_PARAM_workspace_id="{{workspace_id}}" \
   SQL_PARAM_profile_id="{{profile_id}}" \
   SQL_PARAM_db_type="{{db_type}}" \
@@ -234,8 +283,11 @@ run_write_sql "$SCRIPTS/store_memory.sql" \
   SQL_PARAM_ticket_id="{{ticket_id}}" \
   SQL_PARAM_project_id="{{project_id}}" \
   SQL_PARAM_error_code="{{error_code}}" \
-  SQL_PARAM_distill_version="{{distill_version}}"
+  SQL_PARAM_distill_version="{{distill_version}}" | jq -r '.[0].id')
 ```
+
+Where `run_write_sql_json` is the same as `run_write_sql` but adds `-o json` to
+the `swissql exec` call so the `RETURNING id` result can be parsed.
 
 `store_memory.sql` and `update_memory_occurrence.sql` derive ticket provenance
 from `ticket_id`: `agent_memories.agent_id` is the ticket's primary/assignee
@@ -243,7 +295,8 @@ agent, and `metadata.agent_ids` contains all participating agents with the
 primary agent first. `metadata.ticket_ids` records every ticket that contributed
 to a deduplicated memory. Callers should not pass agent provenance manually.
 
-   - For `environment_fact` and `preference` types, supersede old memories **with the same profile_id**:
+   - For `environment_fact` and `preference` types, supersede old memories
+     **with the same profile_id** using the `NEW_ID` captured above:
 
 ```bash
 run_write_sql "$SCRIPTS/supersede_memory.sql" \
@@ -251,7 +304,7 @@ run_write_sql "$SCRIPTS/supersede_memory.sql" \
   SQL_PARAM_memory_type="{{type}}" \
   SQL_PARAM_profile_id="{{profile_id}}" \
   SQL_PARAM_project_id="{{project_id}}" \
-  SQL_PARAM_new_memory_id="{{new_id}}"
+  SQL_PARAM_new_memory_id="$NEW_ID"
 ```
 
 **Important**: Only memories with the same `profile_id` are superseded. This prevents cross-environment contamination (e.g., oracle A's facts won't overwrite oracle B's facts).
@@ -270,6 +323,30 @@ run_write_sql "$SCRIPTS/mark_ticket_distilled.sql" \
   SQL_PARAM_distiller_id="{{distiller_id}}" \
   SQL_PARAM_distiller_name="{{distiller_name}}"
 ```
+
+### Step 6: Label Ticket as Distilled in moclaw
+
+Tag the ticket with a `distilled` label so it's visible in the moclaw UI.
+
+First, ensure the label exists (create with the correct color if missing). The
+`moclaw label create` command will fail if the label already exists — that's
+expected, ignore the error:
+
+```bash
+moclaw label create --name distilled --color "#8B5CF6" 2>/dev/null || true
+```
+
+Then add the label to the ticket. `moclaw ticket label add` resolves the label
+by name (case-insensitive) and auto-creates it with a default color if not
+found, but we create it explicitly above to control the color:
+
+```bash
+moclaw ticket label add "{{ticket_id}}" distilled
+```
+
+This step is optional — if the moclaw CLI is not available or the API is
+unreachable, distillation is still complete (Step 5 already recorded the
+status in the database). Log a warning and continue.
 
 ## Memory Types
 

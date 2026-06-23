@@ -36,7 +36,7 @@ All bash commands below use `$SCRIPTS/<script>` as the full path. Do NOT use rel
 | `profile_id` | No | Filter by connection profile (scope weighting) |
 | `db_type` | No | Filter by database engine (scope weighting) |
 | `project_id` | No | Filter by project |
-| `memory_types` | No | Filter by memory types (comma-separated, e.g., `error_resolution,failure_scenario`) |
+| `memory_types` | No | Filter by memory types (comma-separated, e.g. `error_resolution,failure_scenario`). **Must not be empty** — an empty string becomes `{""}` after `string_to_array` and matches no rows. To search all vector-indexed types, pass `error_resolution,failure_scenario,success_playbook,human_correction`. |
 | `top_k` | No | Max results per type (default: 3) |
 | `embedding_api` | No | Embedding API endpoint (default: `$EMBEDDING_API`) |
 | `embedding_key` | No | Embedding API key (default: `$EMBEDDING_KEY`) |
@@ -51,6 +51,24 @@ The following environment variables are used as defaults for Embedding API param
 | `EMBEDDING_API` | API endpoint | `https://api.openai.com/v1/embeddings` |
 | `EMBEDDING_KEY` | API key | `sk-xxx` |
 | `EMBEDDING_MODEL` | Model name | `text-embedding-3-small` |
+
+### Embedding Dimensions
+
+The pgvector column is `vector(1536)`. All embedding API calls in this skill
+hardcode `"dimensions": 1536` to match. When switching embedding models:
+
+- **OpenAI `text-embedding-3-small` / `text-embedding-3-large`**: support the
+  `dimensions` parameter — passing 1536 works (3-large natively outputs 3072
+  but truncates to 1536).
+- **OpenAI `text-embedding-ada-002`**: natively 1536 dimensions but does **not**
+  support the `dimensions` parameter — the API will reject the request. Remove
+  the `"dimensions": 1536` field from the curl payload if using this model.
+- **BigModel `embedding-3`**: native 2048 dimensions — the `dimensions: 1536`
+  parameter is **required**; without it the API returns 2048-dim vectors that
+  will fail pgvector insertion.
+- **Other models**: verify the model supports a 1536-dim output (or update the
+  pgvector column dimension and all `"dimensions":` values in this skill and
+  in `internal/embedding/embedding.go` `DefaultDimensions`).
 
 ## Workflow
 

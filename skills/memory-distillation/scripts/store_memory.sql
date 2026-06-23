@@ -1,15 +1,17 @@
 -- Store a NEW distilled memory with embedding (no similar memory found)
 -- Used by: memory-distillation skill Step 4 (only when no similar memory exists)
 
+-- moclaw renamed issue->ticket and agent_task_queue->agent_task; assignee_type
+-- is now an INT enum (1 = agent) and the task FK is ticket_id.
 WITH issue_primary AS (
-    SELECT CASE WHEN assignee_type = 'agent' THEN assignee_id::text ELSE NULL END AS primary_agent_id
-    FROM issue
+    SELECT CASE WHEN assignee_type = 1 THEN assignee_id::text ELSE NULL END AS primary_agent_id
+    FROM ticket
     WHERE id = :ticket_id
 ),
 task_agents AS (
     SELECT agent_id::text AS agent_id, MIN(created_at) AS first_seen
-    FROM agent_task_queue
-    WHERE issue_id = :ticket_id
+    FROM agent_task
+    WHERE ticket_id = :ticket_id
       AND agent_id IS NOT NULL
     GROUP BY agent_id
 ),

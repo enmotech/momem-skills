@@ -1,8 +1,13 @@
 -- Get complete ticket transcript with all related data
 -- Used by: memory-distillation skill Step 2
+-- moclaw renamed issue->ticket, comment->ticket_comment,
+-- agent_task_queue->agent_task, task_message->agent_task_message.
+-- status/creator_type/assignee_type/author_type are now INT enums, mapped to
+-- strings via CASE so the transcript shape stays stable. ticket_comment has no
+-- workspace_id column, so it is selected as NULL.
 
 -- Main ticket info
-SELECT 
+SELECT
     'ticket' as record_type,
     i.id,
     i.workspace_id,
@@ -10,26 +15,26 @@ SELECT
     i.title,
     i.description,
     i.number,
-    i.status,
-    i.creator_type,
+    CASE i.status WHEN 4 THEN 'done' WHEN 2 THEN 'in_progress' WHEN 6 THEN 'cancelled' ELSE i.status::text END AS status,
+    CASE i.creator_type WHEN 0 THEN 'member' WHEN 1 THEN 'agent' ELSE i.creator_type::text END AS creator_type,
     i.creator_id::text,
-    i.assignee_type,
+    CASE i.assignee_type WHEN 0 THEN 'member' WHEN 1 THEN 'agent' WHEN 3 THEN 'team' ELSE COALESCE(i.assignee_type::text, '') END AS assignee_type,
     i.assignee_id::text,
     i.created_at,
     i.updated_at,
     NULL as content,
     NULL as author_type,
     NULL as author_id
-FROM issue i
+FROM ticket i
 WHERE i.id = :ticket_id
 
 UNION ALL
 
 -- Comments (human interactions)
-SELECT 
+SELECT
     'comment' as record_type,
     c.id,
-    c.workspace_id,
+    NULL as workspace_id,
     NULL as project_id,
     NULL as title,
     NULL as description,
@@ -42,15 +47,15 @@ SELECT
     c.created_at,
     NULL as updated_at,
     c.content,
-    c.author_type,
+    CASE c.author_type WHEN 0 THEN 'member' WHEN 1 THEN 'agent' ELSE c.author_type::text END AS author_type,
     c.author_id::text
-FROM comment c
-WHERE c.issue_id = :ticket_id
+FROM ticket_comment c
+WHERE c.ticket_id = :ticket_id
 
 UNION ALL
 
 -- Agent tasks
-SELECT 
+SELECT
     'task' as record_type,
     atq.id,
     NULL as workspace_id,
@@ -58,7 +63,7 @@ SELECT
     NULL as title,
     atq.result::text as description,
     NULL as number,
-    atq.status,
+    CASE atq.status WHEN 3 THEN 'completed' WHEN 4 THEN 'failed' WHEN 5 THEN 'cancelled' ELSE atq.status::text END AS status,
     NULL as creator_type,
     atq.agent_id::text as creator_id,
     NULL as assignee_type,
@@ -68,13 +73,13 @@ SELECT
     atq.trigger_summary as content,
     NULL as author_type,
     NULL as author_id
-FROM agent_task_queue atq
-WHERE atq.issue_id = :ticket_id
+FROM agent_task atq
+WHERE atq.ticket_id = :ticket_id
 
 UNION ALL
 
 -- Task messages (agent reasoning/tool calls)
-SELECT 
+SELECT
     'message' as record_type,
     tm.id,
     NULL as workspace_id,
@@ -92,8 +97,8 @@ SELECT
     tm.content,
     NULL as author_type,
     NULL as author_id
-FROM task_message tm
-JOIN agent_task_queue atq ON tm.task_id = atq.id
-WHERE atq.issue_id = :ticket_id
+FROM agent_task_message tm
+JOIN agent_task atq ON tm.agent_task_id = atq.id
+WHERE atq.ticket_id = :ticket_id
 
 ORDER BY created_at ASC;
