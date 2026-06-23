@@ -5,7 +5,7 @@ description: Retrieve relevant memories from the memory bank based on query text
 
 # Memory Retrieval
 
-Retrieve relevant memories from `agent_memories` table based on query text with scope filtering.
+Retrieve relevant memories from `momem.agent_memories` table based on query text with scope filtering.
 
 ## Script Location
 

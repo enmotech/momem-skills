@@ -290,7 +290,7 @@ Where `run_write_sql_json` is the same as `run_write_sql` but adds `-o json` to
 the `swissql exec` call so the `RETURNING id` result can be parsed.
 
 `store_memory.sql` and `update_memory_occurrence.sql` derive ticket provenance
-from `ticket_id`: `agent_memories.agent_id` is the ticket's primary/assignee
+from `ticket_id`: `momem.agent_memories.agent_id` is the ticket's primary/assignee
 agent, and `metadata.agent_ids` contains all participating agents with the
 primary agent first. `metadata.ticket_ids` records every ticket that contributed
 to a deduplicated memory. Callers should not pass agent provenance manually.

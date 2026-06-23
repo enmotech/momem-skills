@@ -8,7 +8,7 @@ SELECT
     memory_type,
     metadata,
     1 - (embedding <=> :new_embedding::vector) as similarity
-FROM agent_memories
+FROM momem.agent_memories
 WHERE workspace_id = :workspace_id
   AND memory_type = :memory_type
   AND superseded_by IS NULL

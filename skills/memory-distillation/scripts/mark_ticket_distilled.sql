@@ -1,7 +1,7 @@
 -- Mark a ticket as distilled
 -- Used by: momem store
 
-INSERT INTO ticket_distillation_status 
+INSERT INTO momem.ticket_distillation_status
 (ticket_id, workspace_id, distilled_at, memory_count, distill_version, distillation_method, metadata)
 VALUES (
     :ticket_id,

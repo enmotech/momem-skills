@@ -35,7 +35,7 @@ incoming_provenance AS (
 ),
 current_metadata AS (
     SELECT metadata
-    FROM agent_memories
+    FROM momem.agent_memories
     WHERE id = :memory_id
 ),
 merged_agent_ids AS (
@@ -81,7 +81,7 @@ merged_ticket_ids AS (
         GROUP BY ticket_id
     ) deduped_tickets
 )
-UPDATE agent_memories
+UPDATE momem.agent_memories
 SET
     occurrence_count = occurrence_count + 1,
     last_seen_at = now(),

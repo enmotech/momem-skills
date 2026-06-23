@@ -24,7 +24,7 @@ FROM (
       END as scope_weight,
       -- Frequency boost: log(occurrence_count + 1) gives higher weight to frequently observed patterns
       ln(occurrence_count + 1) as frequency_boost
-  FROM agent_memories
+  FROM momem.agent_memories
   WHERE workspace_id = :workspace_id
     AND memory_type = ANY(string_to_array(:memory_types, ','))
     AND superseded_by IS NULL

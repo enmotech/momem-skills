@@ -14,7 +14,7 @@ SELECT
     i.created_at,
     i.updated_at
 FROM ticket i
-LEFT JOIN ticket_distillation_status tds ON i.id = tds.ticket_id
+LEFT JOIN momem.ticket_distillation_status tds ON i.id = tds.ticket_id
 WHERE i.workspace_id = :workspace_id
   AND i.status = 4
   AND tds.ticket_id IS NULL  -- Not yet distilled

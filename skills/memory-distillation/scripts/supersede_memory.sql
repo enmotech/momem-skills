@@ -3,7 +3,7 @@
 -- Important: Only supersede memories within the same profile to prevent cross-environment contamination
 
 WITH updated AS (
-  UPDATE agent_memories
+  UPDATE momem.agent_memories
   SET superseded_by = :new_memory_id
   WHERE workspace_id = :workspace_id
     AND memory_type = :memory_type

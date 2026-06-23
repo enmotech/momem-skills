@@ -2,9 +2,9 @@
 -- Used by: momem store --force
 
 -- Step 1: Delete memories for this ticket
-DELETE FROM agent_memories 
+DELETE FROM momem.agent_memories
 WHERE metadata->>'ticket_id' = :ticket_id;
 
 -- Step 2: Delete distillation status
-DELETE FROM ticket_distillation_status 
+DELETE FROM momem.ticket_distillation_status
 WHERE ticket_id = :ticket_id;

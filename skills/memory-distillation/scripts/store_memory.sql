@@ -33,7 +33,7 @@ provenance AS (
         COALESCE(array_agg(agent_id ORDER BY priority, first_seen), ARRAY[]::text[]) AS agent_ids
     FROM candidate_agents
 )
-INSERT INTO agent_memories
+INSERT INTO momem.agent_memories
 (workspace_id, agent_id, profile_id, db_type, memory_type, content, embedding, metadata, occurrence_count, last_seen_at)
 SELECT
     :workspace_id,
